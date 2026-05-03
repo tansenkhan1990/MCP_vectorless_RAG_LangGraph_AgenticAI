@@ -1,4 +1,5 @@
-# Python dependencies for the Enterprise Intelligence applicationfastapi
+# Python dependencies for the Enterprise Intelligence application
+fastapi
 uvicorn
 langgraph
 openai-agents
