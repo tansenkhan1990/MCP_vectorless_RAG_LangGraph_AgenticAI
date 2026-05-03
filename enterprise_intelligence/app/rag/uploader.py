@@ -8,13 +8,10 @@ def chunk_text(text, size=1200):
     return [text[i:i+size] for i in range(0, len(text), size)]
 
 def ingest_pdf(file_path, filename):
-
     doc = fitz.open(file_path)
 
     for page_num, page in enumerate(doc, start=1):
-
         text = page.get_text()
-
         chunks = chunk_text(text)
 
         for chunk in chunks:
@@ -22,7 +19,9 @@ def ingest_pdf(file_path, filename):
                 "file_name": filename,
                 "title": filename,
                 "page_number": page_num,
-                "content": chunk
+                "chunk_text": chunk,
+                "category": "private",
+                "source": "uploaded_pdf"
             }).execute()
 
     return "PDF uploaded successfully"
