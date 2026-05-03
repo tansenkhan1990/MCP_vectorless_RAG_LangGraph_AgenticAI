@@ -1,1 +1,13 @@
-# Python dependencies for the Enterprise Intelligence application
+# Python dependencies for the Enterprise Intelligence applicationfastapi
+uvicorn
+langgraph
+openai-agents
+python-dotenv
+supabase
+mcp
+reportlab
+duckduckgo-search
+yfinance
+pymupdf
+python-multipart
+httpx
