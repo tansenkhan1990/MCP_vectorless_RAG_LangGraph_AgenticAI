@@ -1,0 +1,1 @@
+-- SQL schema for private company details

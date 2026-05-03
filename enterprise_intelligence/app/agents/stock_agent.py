@@ -1,0 +1,1 @@
+# Stock agent for the Enterprise Intelligence application
