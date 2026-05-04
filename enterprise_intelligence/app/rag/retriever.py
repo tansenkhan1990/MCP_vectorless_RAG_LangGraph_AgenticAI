@@ -3,13 +3,12 @@
 import logging
 
 from app.db import get_supabase_client
+from app.config import RAG_MATCH_COUNT
 
 logger = logging.getLogger(__name__)
 
-_DEFAULT_MATCH_COUNT = 5
 
-
-def search_documents(query: str, match_count: int = _DEFAULT_MATCH_COUNT) -> str:
+def search_documents(query: str, match_count: int | None = None) -> str:
     """
     Search the ``private_company_details`` table for documents matching *query*.
 
@@ -18,12 +17,15 @@ def search_documents(query: str, match_count: int = _DEFAULT_MATCH_COUNT) -> str
 
     Args:
         query: The search query string.
-        match_count: Maximum number of results to return.
+        match_count: Maximum number of results to return. Defaults to RAG_MATCH_COUNT config.
 
     Returns:
         A newline-separated string of matching document chunks,
         or a fallback message if nothing was found.
     """
+    if match_count is None:
+        match_count = RAG_MATCH_COUNT
+    
     try:
         client = get_supabase_client()
         result = client.rpc(

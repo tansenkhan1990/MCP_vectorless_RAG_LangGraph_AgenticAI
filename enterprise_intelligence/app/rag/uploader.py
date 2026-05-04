@@ -8,25 +8,29 @@ from pathlib import Path
 import fitz  # PyMuPDF
 
 from app.db import get_supabase_client
+from app.config import CHUNK_SIZE, CHUNK_OVERLAP
 
 logger = logging.getLogger(__name__)
 
-_DEFAULT_CHUNK_SIZE = 1200
-_CHUNK_OVERLAP = 200  # overlap helps preserve context across chunk boundaries
 
-
-def chunk_text(text: str, size: int = _DEFAULT_CHUNK_SIZE, overlap: int = _CHUNK_OVERLAP) -> list[str]:
+def chunk_text(text: str, size: int | None = None, overlap: int | None = None) -> list[str]:
     """
     Split *text* into chunks of approximately *size* characters with *overlap*.
 
     Args:
         text: The source text to chunk.
-        size: Maximum chunk size in characters.
-        overlap: Number of overlapping characters between consecutive chunks.
+        size: Maximum chunk size in characters. Defaults to CHUNK_SIZE config.
+        overlap: Number of overlapping characters between consecutive chunks. 
+                 Defaults to CHUNK_OVERLAP config.
 
     Returns:
         A list of text chunks.
     """
+    if size is None:
+        size = CHUNK_SIZE
+    if overlap is None:
+        overlap = CHUNK_OVERLAP
+    
     if not text.strip():
         return []
 

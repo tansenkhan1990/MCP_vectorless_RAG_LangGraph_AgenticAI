@@ -10,6 +10,7 @@ from mcp.client.stdio import StdioServerParameters, stdio_client
 from mcp import ClientSession
 
 from app.state import GraphState
+from app.config import PDF_GENERATION_TIMEOUT_SECONDS
 
 logger = logging.getLogger(__name__)
 
@@ -66,10 +67,10 @@ def _run_pdf_sync(content: str, title: str = "AI Report") -> str:
 
     thread = threading.Thread(target=_worker, daemon=True)
     thread.start()
-    thread.join(timeout=30)  # 30-second timeout to avoid hanging forever
+    thread.join(timeout=PDF_GENERATION_TIMEOUT_SECONDS)
 
     if thread.is_alive():
-        raise TimeoutError("PDF generation timed out after 30 seconds")
+        raise TimeoutError(f"PDF generation timed out after {PDF_GENERATION_TIMEOUT_SECONDS} seconds")
 
     result = result_queue.get_nowait()
     if isinstance(result, Exception):
@@ -148,4 +149,5 @@ def pdf_node(state: GraphState) -> dict:
         }
     except Exception as exc:
         logger.error("PDF generation failed: %s", exc, exc_info=True)
+        return {"answer": f"❌ PDF generation failed: {exc}"}
         return {"answer": f"PDF generation error: {exc}"}

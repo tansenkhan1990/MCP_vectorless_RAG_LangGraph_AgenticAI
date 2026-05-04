@@ -137,12 +137,18 @@ uv pip install -r requirements.txt
 
 ### Environment Variables
 
-Create or update `.env` file in the root directory:
+Create or update `.env` file in the root directory. Use `.env.example` as a template:
+
+```bash
+cp .env.example .env
+```
+
+Then edit `.env` and fill in your actual credentials:
 
 ```env
 # OpenAI/Ollama Configuration
 OPENAI_BASE_URL=http://localhost:11434/v1
-OPENAI_API_KEY=ollama
+OPENAI_API_KEY=your-api-key-here
 
 # Telemetry Settings
 OPENAI_AGENTS_DISABLE_TRACING=1
@@ -154,7 +160,13 @@ LOCAL_EMBEDDING_MODEL=nomic-embed-text:latest
 
 # Supabase Configuration
 SUPABASE_URL=https://your-project.supabase.co
-SUPABASE_KEY=your-anon-key
+SUPABASE_KEY=your-anon-key-here
+
+# Application Configuration (Optional)
+MAX_UPLOAD_SIZE_MB=50          # Max PDF upload size
+RAG_MATCH_COUNT=5              # Number of RAG results
+CHUNK_SIZE=1200                # PDF chunk size
+PDF_GENERATION_TIMEOUT_SECONDS=30  # PDF generation timeout
 ```
 
 ### Environment Variable Explanation
@@ -167,6 +179,55 @@ SUPABASE_KEY=your-anon-key
 | `LOCAL_EMBEDDING_MODEL` | Embedding model | `nomic-embed-text:latest` |
 | `SUPABASE_URL` | Supabase project URL | `https://project.supabase.co` |
 | `SUPABASE_KEY` | Supabase anon key | Your project anon key |
+| `MAX_UPLOAD_SIZE_MB` | Max file upload size | `50` |
+| `RAG_MATCH_COUNT` | Results per RAG search | `5` |
+| `CHUNK_SIZE` | PDF chunk size for indexing | `1200` |
+| `PDF_GENERATION_TIMEOUT_SECONDS` | PDF generation timeout | `30` |
+
+## 🔐 Security Best Practices
+
+### Critical Security Notes
+
+1. **Never commit `.env` to version control**
+   - `.env` is automatically ignored by `.gitignore`
+   - Use `.env.example` as a template for your development team
+
+2. **Secure your API in production**
+   - Implement authentication (OAuth2, API keys)
+   - Use HTTPS only
+   - Restrict CORS origins to your domains
+   - Add rate limiting (currently set to 10 requests/min per IP)
+
+3. **Protect your Supabase credentials**
+   - Use the **anon key** (public) - provided in `.env`
+   - Never expose the **service role key** in client-facing code
+   - Implement row-level security (RLS) in Supabase
+
+4. **Validate file uploads**
+   - Only PDF files are accepted
+   - Maximum file size: 50 MB (configurable)
+   - Files are validated for PDF format (magic bytes check)
+
+5. **Rate limiting**
+   - `/ask` and `/upload-pdf` endpoints: 10 requests per 60 seconds per IP
+   - Adjust `RATE_LIMIT_REQUESTS` and `RATE_LIMIT_WINDOW` in `app/main.py` for production
+
+### Environment Setup for Different Environments
+
+**Development** (`.env`):
+```env
+OPENAI_BASE_URL=http://localhost:11434/v1
+SUPABASE_URL=https://your-dev-project.supabase.co
+SUPABASE_KEY=your-dev-anon-key
+```
+
+**Production** (set via environment variables, not `.env`):
+```bash
+export OPENAI_BASE_URL="https://api.openai.com/v1"  # or your provider
+export OPENAI_API_KEY="sk-..."
+export SUPABASE_URL="https://your-prod-project.supabase.co"
+export SUPABASE_KEY="your-prod-anon-key"
+```
 
 ## 📖 Usage
 
