@@ -1,88 +1,181 @@
-import logging
-from fastapi import FastAPI, UploadFile, File, HTTPException
-from pydantic import BaseModel, validator
-import shutil
+"""
+Enterprise Intelligence API — FastAPI application entry point.
 
-from app.graph import graph
+Endpoints:
+    GET  /          Health check
+    POST /ask       Process a question through the agentic AI system
+    POST /upload-pdf   Upload and ingest a PDF into the RAG knowledge base
+"""
+
+import logging
+import os
+from contextlib import asynccontextmanager
+from pathlib import Path
+
+from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel, field_validator
+
+from app.config import UPLOADS_DIR, validate_config
+from app.graph import get_graph
 from app.rag.uploader import ingest_pdf
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
+# ---------------------------------------------------------------------------
+# Logging
+# ---------------------------------------------------------------------------
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s  %(levelname)-8s  %(name)s  %(message)s",
+)
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="Enterprise Intelligence API", version="1.0.0")
+# ---------------------------------------------------------------------------
+# Constants
+# ---------------------------------------------------------------------------
+MAX_UPLOAD_SIZE_MB = 50
+MAX_UPLOAD_SIZE_BYTES = MAX_UPLOAD_SIZE_MB * 1024 * 1024
 
+
+# ---------------------------------------------------------------------------
+# Lifespan — run startup / shutdown logic
+# ---------------------------------------------------------------------------
+@asynccontextmanager
+async def lifespan(application: FastAPI):
+    """Startup and shutdown events."""
+    # Startup
+    warnings = validate_config()
+    if warnings:
+        logger.warning("Config warnings: %s", warnings)
+
+    UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
+    logger.info("Uploads directory ready: %s", UPLOADS_DIR)
+    logger.info("Enterprise Intelligence API started")
+
+    yield  # ← app is running
+
+    # Shutdown
+    logger.info("Enterprise Intelligence API shutting down")
+
+
+# ---------------------------------------------------------------------------
+# App
+# ---------------------------------------------------------------------------
+app = FastAPI(
+    title="Enterprise Intelligence API",
+    description="Agentic AI system with RAG, web search, stock data, and PDF generation.",
+    version="1.0.0",
+    lifespan=lifespan,
+)
+
+# CORS — allow all origins in dev; tighten for production
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
+# ---------------------------------------------------------------------------
+# Request / Response models
+# ---------------------------------------------------------------------------
 class AskRequest(BaseModel):
+    """Request body for the /ask endpoint."""
     question: str
-    
-    @validator('question')
-    def question_must_not_be_empty(cls, v):
-        if not v.strip():
-            raise ValueError('Question cannot be empty')
-        return v
 
-@app.post("/ask")
+    @field_validator("question")
+    @classmethod
+    def question_must_not_be_empty(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError("Question cannot be empty")
+        return v.strip()
+
+
+class AskResponse(BaseModel):
+    """Response body for the /ask endpoint."""
+    question: str
+    route: str | None = None
+    answer: str | None = None
+
+
+class MessageResponse(BaseModel):
+    """Generic message response."""
+    message: str
+
+
+# ---------------------------------------------------------------------------
+# Endpoints
+# ---------------------------------------------------------------------------
+@app.get("/", response_model=MessageResponse)
+async def root():
+    """Health check — verify the API is running."""
+    return MessageResponse(message="Enterprise Intelligence API is running")
+
+
+@app.post("/ask", response_model=AskResponse)
 async def ask(req: AskRequest):
     """
     Process a question through the agentic AI system.
-    
-    Args:
-        req (AskRequest): The request containing the question
-        
-    Returns:
-        dict: The response from the agentic AI system
+
+    The question is routed to the most appropriate agent (RAG, web, stock, or PDF)
+    and the result is returned.
     """
     try:
-        logger.info(f"Processing question: {req.question}")
+        logger.info("Processing question: %s", req.question[:100])
+        graph = get_graph()
         result = graph.invoke({"question": req.question})
-        logger.info("Question processed successfully")
-        return result
-    except Exception as e:
-        logger.error(f"Error processing question: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Error processing question: {str(e)}")
+        logger.info("Question processed — route=%s", result.get("route"))
+        return AskResponse(**result)
+    except Exception as exc:
+        logger.error("Error processing question: %s", exc, exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error processing question: {exc}",
+        )
 
-@app.post("/upload-pdf")
+
+@app.post("/upload-pdf", response_model=MessageResponse)
 async def upload_pdf(file: UploadFile = File(...)):
     """
-    Upload a PDF file for ingestion into the RAG system.
-    
-    Args:
-        file (UploadFile): The PDF file to upload
-        
-    Returns:
-        dict: Success message
-    """
-    try:
-        logger.info(f"Uploading file: {file.filename}")
-        
-        # Validate file type
-        if not file.filename.endswith('.pdf'):
-            raise HTTPException(status_code=400, detail="Only PDF files are allowed")
-        
-        path = f"uploads/{file.filename}"
-        
-        # Save file
-        with open(path, "wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
-        
-        # Ingest PDF
-        msg = ingest_pdf(path, file.filename)
-        
-        logger.info(f"File {file.filename} uploaded and ingested successfully")
-        return {"message": msg}
-    except HTTPException:
-        # Re-raise HTTP exceptions
-        raise
-    except Exception as e:
-        logger.error(f"Error uploading file: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Error uploading file: {str(e)}")
+    Upload a PDF file for ingestion into the RAG knowledge base.
 
-@app.get("/")
-async def root():
+    The file is validated (type + size), saved to disk, then ingested
+    page-by-page into the Supabase document store.
     """
-    Root endpoint to check if the API is running.
-    
-    Returns:
-        dict: Welcome message
-    """
-    return {"message": "Enterprise Intelligence API is running"}
+    # --- Validate file type ---
+    if not file.filename or not file.filename.lower().endswith(".pdf"):
+        raise HTTPException(status_code=400, detail="Only PDF files are allowed")
+
+    # --- Sanitise filename (prevent path traversal) ---
+    safe_filename = Path(file.filename).name  # strips any directory components
+    if not safe_filename:
+        raise HTTPException(status_code=400, detail="Invalid filename")
+
+    # --- Validate file size ---
+    contents = await file.read()
+    if len(contents) > MAX_UPLOAD_SIZE_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail=f"File too large. Maximum allowed size is {MAX_UPLOAD_SIZE_MB} MB.",
+        )
+
+    try:
+        logger.info("Uploading file: %s (%d bytes)", safe_filename, len(contents))
+
+        save_path = UPLOADS_DIR / safe_filename
+        save_path.write_bytes(contents)
+
+        msg = ingest_pdf(str(save_path), safe_filename)
+
+        logger.info("File '%s' uploaded and ingested successfully", safe_filename)
+        return MessageResponse(message=msg)
+
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error("Error uploading file: %s", exc, exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error uploading file: {exc}",
+        )

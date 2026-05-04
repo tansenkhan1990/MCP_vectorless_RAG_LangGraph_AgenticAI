@@ -261,6 +261,7 @@ enterprise_intelligence/
 ├── app/
 │   ├── main.py                 # FastAPI application entry point
 │   ├── config.py               # Configuration management
+│   ├── db.py                   # Shared Supabase client factory
 │   ├── state.py                # LangGraph state definitions
 │   ├── graph.py                # LangGraph orchestration
 │   │
@@ -352,18 +353,20 @@ enterprise_intelligence/
 
 ```sql
 CREATE TABLE private_company_details (
-  id BIGINT PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
+  id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   file_name TEXT,
   title TEXT,
   page_number INTEGER,
-  content TEXT,
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+  chunk_text TEXT NOT NULL,
+  category TEXT DEFAULT 'private',
+  source TEXT DEFAULT 'uploaded_pdf',
+  created_at TIMESTAMP DEFAULT NOW(),
+  tsv TSVECTOR
 );
 
 -- Create full-text search index
-CREATE INDEX idx_content_fts ON private_company_details USING GIN (
-  to_tsvector('english', content)
-);
+CREATE INDEX idx_private_company_chunk_text
+  ON private_company_details USING GIN(tsv);
 ```
 
 ### Document Ingestion
@@ -376,7 +379,9 @@ When you upload a PDF:
    - `file_name`: Original PDF filename
    - `title`: Document title
    - `page_number`: Source page number
-   - `content`: Text chunk content
+   - `chunk_text`: Text chunk content
+   - `category`: Document category (default: `private`)
+   - `source`: Ingestion source (default: `uploaded_pdf`)
    - `created_at`: Ingestion timestamp
 
 ## 🐛 Troubleshooting

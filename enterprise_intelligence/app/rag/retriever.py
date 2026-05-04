@@ -1,20 +1,45 @@
-from supabase import create_client
-from app.config import SUPABASE_URL, SUPABASE_KEY
+"""RAG retriever — searches the Supabase document store using full-text search."""
 
-client = create_client(SUPABASE_URL, SUPABASE_KEY)
+import logging
 
-def search_documents(query):
-    result = client.rpc(
-        "search_private_company_details",
-        {
-            "search_query": query,
-            "match_count": 5
-        }
-    ).execute()
+from app.db import get_supabase_client
 
-    rows = result.data
+logger = logging.getLogger(__name__)
 
-    if not rows:
-        return "No company data found."
+_DEFAULT_MATCH_COUNT = 5
 
-    return "\n\n".join([r["chunk_text"] for r in rows])
+
+def search_documents(query: str, match_count: int = _DEFAULT_MATCH_COUNT) -> str:
+    """
+    Search the ``private_company_details`` table for documents matching *query*.
+
+    Uses the ``search_private_company_details`` Postgres RPC function which
+    performs full-text search with ``ts_rank`` ordering.
+
+    Args:
+        query: The search query string.
+        match_count: Maximum number of results to return.
+
+    Returns:
+        A newline-separated string of matching document chunks,
+        or a fallback message if nothing was found.
+    """
+    try:
+        client = get_supabase_client()
+        result = client.rpc(
+            "search_private_company_details",
+            {"search_query": query, "match_count": match_count},
+        ).execute()
+
+        rows = result.data
+
+        if not rows:
+            logger.info("No documents found for query: %s", query[:80])
+            return "No company data found."
+
+        logger.info("Found %d document chunks for query: %s", len(rows), query[:80])
+        return "\n\n".join(r["chunk_text"] for r in rows)
+
+    except Exception as exc:
+        logger.error("Document search failed: %s", exc, exc_info=True)
+        raise
