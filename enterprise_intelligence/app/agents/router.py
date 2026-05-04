@@ -21,6 +21,7 @@ logger = logging.getLogger(__name__)
 _EXPLICIT_WEB_PHRASES = [
     "search in the web",
     "search the web",
+    "search in web",
     "search online",
     "search on the internet",
     "look up online",

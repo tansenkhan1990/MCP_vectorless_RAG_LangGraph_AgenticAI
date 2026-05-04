@@ -43,7 +43,8 @@ def _resolve_ticker(question: str) -> str:
     Resolve a ticker symbol from the user's question.
 
     Checks the name map first, then looks for an explicit ticker-like
-    uppercase symbol. Falls back to AAPL.
+    uppercase symbol. Then looks for a word immediately preceding 'stock', 'ticker', or 'shares'.
+    Falls back to AAPL.
     """
     q_lower = question.lower()
 
@@ -55,6 +56,15 @@ def _resolve_ticker(question: str) -> str:
     match = _TICKER_RE.search(question)
     if match:
         return match.group(1)
+
+    # Check for a word immediately preceding 'stock', 'ticker', or 'shares'
+    context_match = re.search(r"\b([a-zA-Z]{1,5})\s+(?:stock|ticker|shares)\b", q_lower)
+    if context_match:
+        word = context_match.group(1)
+        # ignore common stop words that might precede 'stock'
+        stop_words = {"the", "a", "an", "any", "some", "this", "that", "my", "your", "his", "her", "their", "our", "about", "for", "on", "in", "at", "to", "with", "buy", "sell", "of", "and", "or"}
+        if word not in stop_words:
+            return word.upper()
 
     return "AAPL"
 
