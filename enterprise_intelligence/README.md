@@ -1,4 +1,36 @@
-# Enterprise Intelligence System
+"# Enterprise Intelligence System
+
+> **Multi-Agent AI Platform** — LangGraph orchestrates OpenAI Agent SDK-powered agents with tool-calling for RAG, real-time web search, stock market data, and MCP-based PDF generation.
+
+![Version](https://img.shields.io/badge/version-2.0.0-blue.svg)
+![Python](https://img.shields.io/badge/python-3.10+-green.svg)
+![LangGraph](https://img.shields.io/badge/LangGraph-orchestration-orange.svg)
+![OpenAI SDK](https://img.shields.io/badge/OpenAI%20Agent%20SDK-tool--calling-purple.svg)
+![License](https://img.shields.io/badge/license-MIT-blue.svg)
+
+---
+
+## Table of Contents
+
+- [What Is This?](#-what-is-this)
+- [System Architecture](#-system-architecture)
+- [How a Question Flows Through the System](#-how-a-question-flows-through-the-system)
+- [Features](#-features)
+- [Quick Start](#-quick-start)
+- [Installation](#-installation)
+- [Configuration](#-configuration)
+- [API Endpoints](#-api-endpoints)
+- [Agents Deep Dive](#-agents-deep-dive)
+- [Tools Reference](#-tools-reference)
+- [Project Structure](#-project-structure)
+- [Database Schema](#-database-schema)
+- [LangGraph Workflow](#-langgraph-workflow)
+- [MCP PDF Server](#-mcp-pdf-server)
+- [Security](#-security)
+- [Troubleshooting](#-troubleshooting)
+- [Example Queries](#-example-queries)
+- [Dependencies](#-dependencies)
+- [Roadmap](#-roadmap)"
 
 A sophisticated agentic AI system built with **LangGraph** that intelligently routes queries to specialized agents for comprehensive enterprise intelligence. The system seamlessly integrates Retrieval-Augmented Generation (RAG), real-time web search, financial data analysis, and document processing capabilities.
 

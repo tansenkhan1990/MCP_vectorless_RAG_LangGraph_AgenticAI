@@ -1,105 +1,81 @@
-"""Stock agent node — fetches real-time financial data via yfinance."""
+"""Stock agent node — LLM-powered with real-time financial data access."""
 
 import logging
 import re
 
-import yfinance as yf
-
+from agents import Agent, Runner
 from app.workflows.state import GraphState
+from app.agents.tools import get_stock_data
+from app.config import MODEL_NAME
 
 logger = logging.getLogger(__name__)
 
-# Map of common company names → ticker symbols (extend as needed)
-_TICKER_MAP: dict[str, str] = {
-    "apple": "AAPL",
-    "tesla": "TSLA",
-    "google": "GOOGL",
-    "alphabet": "GOOGL",
-    "microsoft": "MSFT",
-    "amazon": "AMZN",
-    "meta": "META",
-    "facebook": "META",
-    "nvidia": "NVDA",
-    "netflix": "NFLX",
-    "asml": "ASML",
-    "tsmc": "TSM",
-    "samsung": "SSNLF",
-    "intel": "INTC",
-    "amd": "AMD",
-    "qualcomm": "QCOM",
-    "broadcom": "AVGO",
-    "salesforce": "CRM",
-    "oracle": "ORCL",
-    "jpmorgan": "JPM",
-    "goldman": "GS",
-}
+_STOCK_INSTRUCTIONS = """You are a financial data specialist with access to real-time stock market information.
 
-# Regex to detect an explicit ticker like "AAPL" or "TSLA" in the question
-_TICKER_RE = re.compile(r"\b([A-Z]{1,5})\b")
+Use the `get_stock_data` tool to retrieve current market data for any ticker symbol.
+
+Guidelines:
+1. Always fetch the latest stock data before answering.
+2. Present stock data clearly and professionally.
+3. If the user mentions a company name (not a ticker), infer the correct ticker:
+   - Apple → AAPL
+   - Tesla → TSLA
+   - Google / Alphabet → GOOGL
+   - Microsoft → MSFT
+   - Amazon → AMZN
+   - Meta / Facebook → META
+   - NVIDIA → NVDA
+   - Netflix → NFLX
+   - ASML → ASML
+   - TSMC → TSM
+   - Intel → INTC
+   - AMD → AMD
+   - Qualcomm → QCOM
+   - Broadcom → AVGO
+   - Salesforce → CRM
+   - Oracle → ORCL
+   - JPMorgan → JPM
+   - Goldman Sachs → GS
+4. If the user asks about a company not in this map, try to infer or ask for the correct ticker.
+5. Explain what the metrics mean if the user seems unfamiliar with financial terms.
+6. When appropriate, provide context (e.g. "PE of 28 is in line with the tech sector average").
+7. For comparison questions, fetch data for multiple tickers and present side by side.
+8. Remind users that market data is real-time but may be delayed."""
+
+_stock_agent = Agent(
+    name="Stock Market Specialist",
+    instructions=_STOCK_INSTRUCTIONS,
+    tools=[get_stock_data],
+    model=MODEL_NAME,
+)
 
 
-def _resolve_ticker(question: str) -> str:
+async def stock_node(state: GraphState) -> dict:
     """
-    Resolve a ticker symbol from the user's question.
-
-    Checks the name map first, then looks for an explicit ticker-like
-    uppercase symbol. Then looks for a word immediately preceding 'stock', 'ticker', or 'shares'.
-    Falls back to AAPL.
-    """
-    q_lower = question.lower()
-
-    for name, ticker in _TICKER_MAP.items():
-        if name in q_lower:
-            return ticker
-
-    # Check for an explicit uppercase ticker in the raw question
-    match = _TICKER_RE.search(question)
-    if match:
-        return match.group(1)
-
-    # Check for a word immediately preceding 'stock', 'ticker', or 'shares'
-    context_match = re.search(r"\b([a-zA-Z]{1,5})\s+(?:stock|ticker|shares)\b", q_lower)
-    if context_match:
-        word = context_match.group(1)
-        # ignore common stop words that might precede 'stock'
-        stop_words = {"the", "a", "an", "any", "some", "this", "that", "my", "your", "his", "her", "their", "our", "about", "for", "on", "in", "at", "to", "with", "buy", "sell", "of", "and", "or"}
-        if word not in stop_words:
-            return word.upper()
-
-    return "AAPL"
-
-
-def stock_node(state: GraphState) -> dict:
-    """
-    Fetch stock data for the resolved ticker and return a formatted summary.
+    Use the OpenAI Agent SDK to fetch and interpret stock market data.
 
     Args:
         state: Current graph state.
 
     Returns:
-        Dict with ``answer`` containing a stock data summary.
+        Dict with ``answer`` from the stock analysis LLM agent.
     """
-    ticker = _resolve_ticker(state["question"])
+    question = state["question"]
+    logger.info("Stock Agent processing: %s", question[:100])
 
     try:
-        stock = yf.Ticker(ticker)
-        info = stock.info
-
-        if not info or "shortName" not in info:
-            logger.warning("No data returned for ticker: %s", ticker)
-            return {"answer": f"Could not find data for ticker '{ticker}'."}
-
-        answer = (
-            f"Ticker: {ticker}\n"
-            f"Name: {info.get('shortName', 'N/A')}\n"
-            f"Price: {info.get('currentPrice', 'N/A')}\n"
-            f"PE Ratio: {info.get('trailingPE', 'N/A')}\n"
-            f"Market Cap: {info.get('marketCap', 'N/A')}\n"
-            f"52-Week High: {info.get('fiftyTwoWeekHigh', 'N/A')}\n"
-            f"52-Week Low: {info.get('fiftyTwoWeekLow', 'N/A')}"
-        )
-        logger.info("Stock data fetched for %s", ticker)
+        result = await Runner.run(_stock_agent, question)
+        answer = result.final_output if result else "No response generated."
+        logger.info("Stock Agent completed — answer length: %d chars", len(answer))
         return {"answer": answer}
     except Exception as exc:
-        logger.error("Stock lookup failed for %s: %s", ticker, exc, exc_info=True)
-        return {"answer": f"Stock lookup error for {ticker}: {exc}"}
+        logger.error("Stock Agent failed: %s", exc, exc_info=True)
+        # Fallback to direct stock data fetch if LLM fails
+        try:
+            # Try to extract a ticker-like pattern
+            ticker_match = re.search(r'\b([A-Z]{1,5})\b', question.upper())
+            ticker = ticker_match.group(1) if ticker_match else "AAPL"
+            fallback = get_stock_data(ticker)
+            return {"answer": f"[Fallback — direct stock data]\n\n{fallback}"}
+        except Exception:
+            return {"answer": f"Stock lookup error: {exc}"}

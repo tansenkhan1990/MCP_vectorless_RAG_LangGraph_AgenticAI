@@ -1,23 +1,25 @@
-"""
-Router node — classifies the user query and decides which agent handles it.
+"""Router node — classifies the user query via fast keyword matching with an LLM fallback
+for ambiguous queries.
 
 Routing rules (evaluated in order, highest priority first):
-    1. Explicit web-search intent phrases  →  web  (e.g. "search the web", "look online")
+    1. Explicit web-search intent phrases  →  web  (e.g. "search the web")
     2. PDF / report keywords               →  pdf
     3. Stock / ticker keywords             →  stock
     4. News / current-events keywords      →  web
-    5. Everything else                     →  rag  (default)
+    5. LLM-based classification (fallback) →  best-matching route
+    6. Default                             →  rag
+
+The LLM fallback only fires when none of the keyword sets match, making it
+efficient for the common case while handling truly ambiguous queries well.
 """
 
 import logging
-import re
 
 from app.workflows.state import GraphState
 
 logger = logging.getLogger(__name__)
 
 # --- Explicit intent phrases (checked as substrings, evaluated first) ---
-# These override everything else — if the user says "search in the web", we honour it.
 _EXPLICIT_WEB_PHRASES = [
     "search in the web",
     "search the web",
@@ -39,7 +41,6 @@ _PDF_KEYWORDS = {"pdf", "report", "document", "generate"}
 # --- Stock / financial data keywords ---
 _STOCK_KEYWORDS = {"stock", "ticker", "share price", "market cap", "pe ratio", "dividend"}
 
-# All known named tickers (add more as needed)
 _STOCK_TICKERS = {
     "tesla", "apple", "google", "alphabet", "microsoft", "amazon",
     "meta", "facebook", "nvidia", "netflix", "asml", "tsmc", "samsung",
@@ -60,27 +61,65 @@ def _matches_any(q: str, keywords: set[str]) -> bool:
     return any(kw in q for kw in keywords)
 
 
-def router_node(state: GraphState) -> dict:
+async def _llm_classify(question: str) -> str:
     """
-    Examine the question and set the ``route`` key in state.
+    Fallback classification via LLM when keyword rules don't match.
+
+    Best practice: only invoke the LLM for truly ambiguous queries to keep
+    latency low and costs down.
+
+    Returns one of: "rag", "web", "stock", "pdf".
+    """
+    from agents import Agent, Runner
+    from app.config import MODEL_NAME
+
+    classify_agent = Agent(
+        name="Query Router",
+        instructions=(
+            "Classify the user's question into exactly one of these categories:\n\n"
+            "- rag    → The question is about company-specific / proprietary knowledge "
+            "that would be in private documents.\n"
+            "- web    → The question needs real-time web search (news, trends, forecasts, "
+            "current events).\n"
+            "- stock  → The question asks about stock market data for a specific company.\n"
+            "- pdf    → The question asks to generate a PDF report or document.\n\n"
+            "Reply with ONLY ONE WORD: rag, web, stock, or pdf."
+        ),
+        model=MODEL_NAME,
+    )
+
+    try:
+        result = await Runner.run(classify_agent, question)
+        route = result.final_output.strip().lower() if result else "rag"
+        if route not in {"rag", "web", "stock", "pdf"}:
+            route = "rag"
+        return route
+    except Exception as exc:
+        logger.debug("LLM router fallback failed, defaulting to rag: %s", exc)
+        return "rag"
+
+
+async def router_node(state: GraphState) -> dict:
+    """
+    Classify the user question and set ``route`` in the state.
 
     Priority order:
-        1. Explicit web-search intent (e.g. "search in the web …") → web
+        1. Explicit web-search intent → web
         2. PDF / document generation → pdf
-        3. Stock / ticker data → stock
-        4. News / web-browsable topics → web
-        5. Default → rag
+        3. News / web-browsable topics → web
+        4. Stock / ticker data → stock
+        5. LLM classification (fallback for ambiguous queries)
+        6. Default → rag
 
     Args:
-        state: Current graph state containing the user question.
+        state: Current graph state.
 
     Returns:
-        A dict with the ``route`` key set to one of:
-        ``"pdf"``, ``"stock"``, ``"web"``, or ``"rag"``.
+        Dict with ``route`` set to one of: "pdf", "stock", "web", or "rag".
     """
     q = state["question"].lower()
 
-    # 1. Explicit web-search instruction overrides everything else
+    # 1. Explicit web-search instruction overrides everything
     if any(phrase in q for phrase in _EXPLICIT_WEB_PHRASES):
         route = "web"
 
@@ -89,8 +128,6 @@ def router_node(state: GraphState) -> dict:
         route = "pdf"
 
     # 3. News / research / forward-looking web topics
-    # Evaluated before stock so that "ASML 5 year growth" goes to web research
-    # instead of just returning the raw stock ticker price.
     elif _matches_any(q, _WEB_KEYWORDS):
         route = "web"
 
@@ -98,9 +135,9 @@ def router_node(state: GraphState) -> dict:
     elif _matches_any(q, _STOCK_KEYWORDS) or _matches_any(q, _STOCK_TICKERS):
         route = "stock"
 
-    # 5. Default — private knowledge base
+    # 5. Ambiguous — use the LLM for intelligent routing
     else:
-        route = "rag"
+        route = await _llm_classify(q)
 
     logger.info("Router decision: '%s' → %s", state["question"][:100], route)
     return {"route": route}

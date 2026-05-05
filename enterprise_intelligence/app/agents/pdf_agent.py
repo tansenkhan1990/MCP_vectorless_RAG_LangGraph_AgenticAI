@@ -1,153 +1,74 @@
-"""PDF agent node — generates PDF reports via the MCP tool server."""
-
-import asyncio
+"""PDF agent node — LLM-powered with research tools and MCP PDF generation."""
 import logging
-import sys
-import threading
-from queue import Queue
 
-from mcp.client.stdio import StdioServerParameters, stdio_client
-from mcp import ClientSession
-
+from agents import Agent, Runner
 from app.workflows.state import GraphState
-from app.core import PDF_GENERATION_TIMEOUT_SECONDS
-
+from app.agents.tools import search_web, get_stock_data, search_company_documents, generate_pdf_report
+from app.config import MODEL_NAME
 logger = logging.getLogger(__name__)
 
+_PDF_INSTRUCTIONS = """You are a report generation specialist. Your job is to research a topic thoroughly
+and then generate a well-formatted PDF report.
 
-async def _run_pdf_async(content: str, title: str = "AI Report") -> str:
+You have access to these tools:
+- `search_web` — search the internet for current, real-time information.
+- `get_stock_data` — get real-time financial data for a ticker symbol.
+- `search_company_documents` — search private company knowledge base.
+- `generate_pdf_report` — generate a PDF with title and content.
+
+Workflow:
+1. ANALYZE the user's request to understand what topic/research they need.
+2. RESEARCH the topic using the appropriate tool(s). You may need to use multiple tools
+   and make multiple searches to gather comprehensive information.
+3. SYNTHESIZE the research into a well-structured report with:
+   - An executive summary
+   - Key findings with supporting data
+   - Sources/references
+   - A conclusion or outlook
+4. GENERATE the PDF using `generate_pdf_report` with the synthesized content.
+
+Guidelines:
+- For financial topics, use `get_stock_data` for company metrics AND `search_web` for analysis/trends.
+- For private company info, first search with `search_company_documents`.
+- Always cite where information came from in the report body.
+- Keep the report professional, data-driven, and actionable.
+- If the user's topic is ambiguous, make reasonable assumptions and state them.
+- The final report should be self-contained — someone reading it should understand the full context."""
+
+_pdf_agent = Agent(
+    name="Report Generation Specialist",
+    instructions=_PDF_INSTRUCTIONS,
+    tools=[search_web, get_stock_data, search_company_documents, generate_pdf_report],
+    model=MODEL_NAME,
+)
+
+
+async def pdf_node(state: GraphState) -> dict:
     """
-    Connect to the MCP server process and call the ``generate_pdf`` tool.
+    Use the OpenAI Agent SDK to research a topic and generate a PDF report via MCP.
 
-    Args:
-        content: The text content to include in the PDF.
-        title: The title for the PDF report.
-
-    Returns:
-        The path to the generated PDF file.
-    """
-    server = StdioServerParameters(
-        command=sys.executable,
-        args=["-m", "app.mcp_server.server"],
-        cwd=".",
-    )
-
-    async with stdio_client(server) as (r, w):
-        async with ClientSession(r, w) as session:
-            await session.initialize()
-            result = await session.call_tool(
-                "generate_pdf",
-                {"title": title, "content": content},
-            )
-            return result.content[0].text
-
-
-def _run_pdf_sync(content: str, title: str = "AI Report") -> str:
-    """
-    Run the async MCP call in a dedicated thread so it works even when
-    called from within an existing event loop (e.g. FastAPI / uvicorn).
-
-    Args:
-        content: The text content to include in the PDF.
-        title: The title for the PDF report.
-
-    Returns:
-        The path to the generated PDF file.
-
-    Raises:
-        Exception: Re-raises any exception from the worker thread.
-    """
-    result_queue: Queue = Queue()
-
-    def _worker() -> None:
-        try:
-            result_queue.put(asyncio.run(_run_pdf_async(content, title)))
-        except Exception as exc:
-            result_queue.put(exc)
-
-    thread = threading.Thread(target=_worker, daemon=True)
-    thread.start()
-    thread.join(timeout=PDF_GENERATION_TIMEOUT_SECONDS)
-
-    if thread.is_alive():
-        raise TimeoutError(f"PDF generation timed out after {PDF_GENERATION_TIMEOUT_SECONDS} seconds")
-
-    result = result_queue.get_nowait()
-    if isinstance(result, Exception):
-        raise result
-    return result
-
-
-def pdf_node(state: GraphState) -> dict:
-    """
-    Generate a PDF report by first researching the user's question topic,
-    and then compiling the research results into the generated document.
-
+    The agent can use any combination of web search, stock data, and document
+    retrieval to gather information before generating the PDF.
     Args:
         state: Current graph state.
 
     Returns:
-        Dict with ``answer`` containing the path to the generated PDF.
+        Dict with ``answer`` containing the research summary and PDF path.
     """
-    import re
-    from app.agents.router import router_node
-    from app.agents.web_agent import web_node
-    from app.agents.stock_agent import stock_node
-    from app.agents.rag_agent import rag_node
-
-    q = state["question"]
-    
-    # 1. Clean the PDF intent to find the actual topic to research
-    # e.g., "Create a PDF report of ASML next 5 year goal" -> "ASML next 5 year goal"
-    clean_q = re.sub(
-        r"^(create|generate|make|write)\s+a\s+(pdf\s+)?(report|document)\s+(of|for|on|about)?\s*",
-        "", q, flags=re.IGNORECASE
-    )
-    clean_q = re.sub(
-        r"(,\s*)?(and\s+)?(create|make|generate|write)\s+a\s+(pdf\s+)?(report|document).*$",
-        "", clean_q, flags=re.IGNORECASE
-    ).strip()
-    
-    if not clean_q:
-        clean_q = q
-        
-    title = f"Report: {clean_q.capitalize()}"[:60]
-    
-    logger.info("PDF Agent researching topic: %s", clean_q)
-    
-    # 2. Route the cleaned query to get research content
+    question = state["question"]
+    logger.info("PDF Agent processing: %s", question[:100])
     try:
-        temp_state = {"question": clean_q, "route": None, "answer": None}
-        route_decision = router_node(temp_state).get("route", "web")
-        
-        # Prevent infinite loop if the router still thinks it's a PDF query
-        if route_decision == "pdf":
-            route_decision = "web"
-            
-        logger.info("PDF Agent delegating research to: %s", route_decision)
-        
-        if route_decision == "stock":
-            content = stock_node(temp_state).get("answer", "No data found.")
-        elif route_decision == "rag":
-            content = rag_node(temp_state).get("answer", "No data found.")
-        else:
-            content = web_node(temp_state).get("answer", "No data found.")
-            
-    except Exception as e:
-        logger.error("PDF Agent failed to research topic: %s", e, exc_info=True)
-        content = f"Failed to research topic: {clean_q}\nError: {e}"
-
-    # 3. Generate the PDF with the researched content
-    try:
-        file_path = _run_pdf_sync(content, title=title)
-        logger.info("PDF generated: %s", file_path)
-        
-        # Return a helpful summary including the preview
-        preview = content[:300] + "..." if len(content) > 300 else content
-        return {
-            "answer": f"✅ PDF report generated successfully!\n\n**File:** `{file_path}`\n\n**Preview:**\n{preview}"
-        }
+        result = await Runner.run(_pdf_agent, question)
+        answer = result.final_output if result else "No response generated."
+        logger.info("PDF Agent completed — answer length: %d chars", len(answer))
+        return {"answer": answer}
     except Exception as exc:
-        logger.error("PDF generation failed: %s", exc, exc_info=True)
-        return {"answer": f"❌ PDF generation failed: {exc}"}
-        return {"answer": f"PDF generation error: {exc}"}
+        logger.error("PDF Agent failed: %s", exc, exc_info=True)
+        # Fallback: try direct PDF generation with a simple web search
+        try:
+            web_results = search_web(question)
+            title = f"Report: {question[:50]}"
+            pdf_result = generate_pdf_report(title, web_results)
+            return {"answer": f"[Fallback — simplified report]\n\n{pdf_result}"}
+        except Exception as fallback_err:
+            return {"answer": f"PDF generation error: {exc}. Fallback also failed: {fallback_err}"}

@@ -2,7 +2,12 @@
 LangGraph workflow definition.
 
 Builds and compiles the state graph that routes user queries
-to the appropriate specialist agent.
+to the appropriate specialist agent. Each agent node is powered
+by the OpenAI Agent SDK with domain-specific tools.
+
+The LangGraph remains the orchestrator — managing state flow,
+routing, and conditional edges — while the OpenAI Agent SDK
+handles LLM reasoning and tool calling within each node.
 """
 
 import logging
@@ -30,12 +35,15 @@ def build_graph() -> StateGraph:
     """
     Construct and compile the LangGraph workflow.
 
+    All agent nodes are async (OpenAI Agent SDK Runner.run() is awaitable).
+    The router is also async because it may fall back to LLM-based classification.
+
     Returns:
-        A compiled ``StateGraph`` ready for ``.invoke()``.
+        A compiled ``StateGraph`` ready for ``.ainvoke()`` / ``.invoke()``.
     """
     builder = StateGraph(GraphState)
 
-    # Register nodes
+    # Register nodes — all have async implementations
     builder.add_node("router", router_node)
     builder.add_node("rag", rag_node)
     builder.add_node("web", web_node)
@@ -45,7 +53,7 @@ def build_graph() -> StateGraph:
     # Entry point
     builder.set_entry_point("router")
 
-    # Conditional routing
+    # Conditional routing based on the route key set by router_node
     builder.add_conditional_edges(
         "router",
         lambda state: state["route"],

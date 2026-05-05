@@ -1,94 +1,59 @@
-"""Web agent node — performs real-time web searches via DuckDuckGo."""
+"""Web agent node — LLM-powered with real-time web search access."""
 
 import logging
-import re
 
-from ddgs import DDGS
-
+from agents import Agent, Runner
 from app.workflows.state import GraphState
+from app.agents.tools import search_web
+from app.config import MODEL_NAME
 
 logger = logging.getLogger(__name__)
 
-_MAX_RESULTS = 5
+_WEB_INSTRUCTIONS = """You are a real-time web research specialist with access to internet search.
 
-# Prefixes users often type that should be stripped before sending to the
-# search engine — they are routing instructions, not search terms.
-_INTENT_PREFIXES = re.compile(
-    r"^(search\s+(in\s+the\s+web|the\s+web|online|on\s+the\s+internet)\s*(for\s+)?|"
-    r"look\s+(up|it\s+up)\s+(online|on\s+the\s+web)\s*(for\s+)?|"
-    r"find\s+online\s*|"
-    r"browse\s+the\s+web\s+(for\s+)?|"
-    r"web\s+search\s+(for\s+)?|"
-    r"internet\s+search\s+(for\s+)?|"
-    r"google\s+(it|for)?\s*)",
-    flags=re.IGNORECASE,
+Use the `search_web` tool to find current, relevant information from the web.
+
+Guidelines:
+1. Always search the web for current information before answering.
+2. Synthesize multiple search results into a clear, citation-backed answer.
+3. When presenting facts, mention the source (article title or URL) in your response.
+4. If the user's question has a temporal aspect (e.g. "latest", "this week", "2026"),
+   make sure you search for the most recent data.
+5. If search results are insufficient, be honest about limitations.
+6. Keep answers well-structured — use bullet points or sections when helpful.
+7. For analysis questions (e.g. "what will happen…", "5 year outlook"),
+   present balanced perspectives from multiple sources.
+8. Do NOT fabricate information — always base your answer on returned search results."""
+
+_web_agent = Agent(
+    name="Web Research Specialist",
+    instructions=_WEB_INSTRUCTIONS,
+    tools=[search_web],
+    model=MODEL_NAME,
 )
 
-# Suffixes or trailing clauses to strip (like "and create a pdf", "make a pdf for that")
-_INTENT_SUFFIXES = re.compile(
-    r"(,\s*(and\s+)?(create|make|generate)\s+a\s+(pdf|report).*)$|"
-    r"(\s+(and\s+)?(create|make|generate)\s+a\s+(pdf|report).*)$",
-    flags=re.IGNORECASE,
-)
 
-
-def _clean_query(question: str) -> str:
+async def web_node(state: GraphState) -> dict:
     """
-    Strip routing intent phrases from the user's question so that only
-    the actual search terms are sent to DuckDuckGo.
-
-    Example:
-        "search in the web how much ASML could grow in next 5 years, create a pdf for that"
-        → "how much ASML could grow in next 5 years"
-    """
-    # Strip prefixes
-    cleaned = _INTENT_PREFIXES.sub("", question).strip()
-    
-    # Strip suffixes
-    cleaned = _INTENT_SUFFIXES.sub("", cleaned).strip()
-    
-    return cleaned if cleaned else question
-
-
-def web_node(state: GraphState) -> dict:
-    """
-    Search the web for the user's question and return formatted results.
-
-    The raw question is cleaned of routing intent phrases before being
-    sent to DuckDuckGo, so "search in the web how much…" becomes
-    "how much…" for better search quality.
-
+    Use the OpenAI Agent SDK to research the question via web search.
     Args:
         state: Current graph state.
 
     Returns:
-        Dict with ``answer`` containing formatted web search results.
+        Dict with ``answer`` from the web research LLM agent.
     """
-    raw_question = state["question"]
-    query = _clean_query(raw_question)
-
-    if query != raw_question:
-        logger.info("Query cleaned: '%s' → '%s'", raw_question[:80], query[:80])
-
+    question = state["question"]
+    logger.info("Web Agent processing: %s", question[:100])
     try:
-        with DDGS() as ddgs:
-            results = list(ddgs.text(query, max_results=_MAX_RESULTS))
-
-        if not results:
-            logger.warning("Web search returned no results for: %s", query)
-            return {"answer": "No web results found for your query."}
-
-        lines = []
-        for i, r in enumerate(results, 1):
-            title = r.get("title", "").strip()
-            body = r.get("body", "").strip()
-            url = r.get("href", "")
-            lines.append(f"**[{i}] {title}**\n{body}\n{url}")
-
-        answer = "\n\n---\n\n".join(lines)
-        logger.info("Web search returned %d results for: %s", len(results), query[:60])
+        result = await Runner.run(_web_agent, question)
+        answer = result.final_output if result else "No response generated."
+        logger.info("Web Agent completed — answer length: %d chars", len(answer))
         return {"answer": answer}
-
     except Exception as exc:
-        logger.error("Web search failed: %s", exc, exc_info=True)
-        return {"answer": f"Web search error: {exc}"}
+        logger.error("Web Agent failed: %s", exc, exc_info=True)
+        # Fallback to direct web search if LLM fails
+        try:
+            fallback = search_web(question)
+            return {"answer": f"[Fallback — direct search results]\n\n{fallback}"}
+        except Exception:
+            return {"answer": f"Web search error: {exc}"}

@@ -1,17 +1,9 @@
-"""LangGraph state schema for the Enterprise Intelligence workflow."""
+"""LangGraph state schema for the Enterprise Intelligence workflow.
 
-from typing import TypedDict, Optional
+⚠️  This file is kept for backward compatibility.
+    The canonical state definition lives at app/workflows/state.py.
+"""
 
+from app.workflows.state import GraphState
 
-class GraphState(TypedDict):
-    """
-    Shared state passed between all nodes in the LangGraph workflow.
-
-    Attributes:
-        question: The user's original query.
-        route: The routing decision (rag | web | stock | pdf).
-        answer: The final response produced by the routed agent.
-    """
-    question: str
-    route: Optional[str]
-    answer: Optional[str]
+__all__ = ["GraphState"]

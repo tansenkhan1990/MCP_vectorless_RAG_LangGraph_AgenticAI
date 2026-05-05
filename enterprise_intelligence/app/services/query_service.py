@@ -2,7 +2,7 @@
 Query service — orchestrates question routing and processing.
 
 Handles:
-  - LangGraph workflow execution
+  - Async LangGraph workflow execution (all agent nodes use OpenAI Agent SDK)
   - Query validation
   - Error handling and logging
 """
@@ -19,8 +19,12 @@ async def process_question(question: str) -> dict:
     Process a user question through the agentic AI system.
     
     Routes the question to the appropriate agent (RAG, web, stock, or PDF)
-    based on content analysis.
-    
+    based on content analysis. Each agent is powered by the OpenAI Agent SDK
+    with domain-specific tools.
+
+    Uses ``graph.ainvoke`` (async) because all agent nodes now use the
+    OpenAI Agent SDK (``Runner.run()`` is awaitable).
+
     Args:
         question: The user's question.
     
@@ -36,7 +40,7 @@ async def process_question(question: str) -> dict:
     try:
         logger.info("Processing question: %s", question[:100])
         graph = get_graph()
-        result = graph.invoke({"question": question})
+        result = await graph.ainvoke({"question": question})
         logger.info("Question processed — route=%s", result.get("route"))
         return result
     except Exception as exc:

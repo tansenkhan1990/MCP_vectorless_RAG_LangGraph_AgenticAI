@@ -1,27 +1,57 @@
-"""RAG agent node — retrieves documents from the Supabase knowledge base."""
+"""RAG agent node — LLM-powered with tool access to the company knowledge base."""
 
 import logging
+from agents import Agent, Runner
 
-from app.rag.retriever import search_documents
 from app.workflows.state import GraphState
+from app.agents.tools import search_company_documents
+from app.config import MODEL_NAME
 
 logger = logging.getLogger(__name__)
 
+_RAG_INSTRUCTIONS = """You are a company knowledge base specialist with access to private company documents.
 
-def rag_node(state: GraphState) -> dict:
+Use the `search_company_documents` tool to find relevant information.
+
+Guidelines:
+1. Always search the document store for relevant context before answering.
+2. If multiple document chunks are returned, synthesize them into a coherent answer.
+3. If no documents are found, honestly tell the user and suggest they upload relevant PDFs.
+4. Cite the specific information found — do not hallucinate.
+5. Keep answers concise and business-appropriate.
+6. If the user's question is vague, ask for clarification after searching."""
+
+_rag_agent = Agent(
+    name="RAG Specialist",
+    instructions=_RAG_INSTRUCTIONS,
+    tools=[search_company_documents],
+    model=MODEL_NAME,
+)
+
+
+async def rag_node(state: GraphState) -> dict:
     """
-    Search the document store and return matching chunks.
+    Use the OpenAI Agent SDK to search private company documents and answer.
 
     Args:
         state: Current graph state.
 
     Returns:
-        Dict with ``answer`` populated from retrieved documents.
+        Dict with ``answer`` from the RAG LLM agent.
     """
+    question = state["question"]
+    logger.info("RAG Agent processing: %s", question[:100])
+
     try:
-        answer = search_documents(state["question"])
-        logger.info("RAG retrieved %d characters", len(answer))
+        result = await Runner.run(_rag_agent, question)
+        answer = result.final_output if result else "No response generated."
+        logger.info("RAG Agent completed — answer length: %d chars", len(answer))
         return {"answer": answer}
     except Exception as exc:
-        logger.error("RAG retrieval failed: %s", exc, exc_info=True)
-        return {"answer": f"RAG search error: {exc}"}
+        logger.error("RAG Agent failed: %s", exc, exc_info=True)
+        # Fallback to direct retrieval if LLM fails
+        try:
+            fallback = search_company_documents(question)
+            return {"answer": f"[Fallback — direct search results]\n\n{fallback}"}
+        except Exception:
+            return {"answer": f"RAG search error: {exc}"}
