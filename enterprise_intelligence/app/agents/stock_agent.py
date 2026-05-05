@@ -5,7 +5,7 @@ import re
 
 import yfinance as yf
 
-from app.state import GraphState
+from app.workflows.state import GraphState
 
 logger = logging.getLogger(__name__)
 

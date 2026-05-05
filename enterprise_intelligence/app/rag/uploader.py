@@ -7,8 +7,8 @@ from pathlib import Path
 
 import fitz  # PyMuPDF
 
-from app.db import get_supabase_client
-from app.config import CHUNK_SIZE, CHUNK_OVERLAP
+from app.core.database import get_supabase_client
+from app.core import CHUNK_SIZE, CHUNK_OVERLAP
 
 logger = logging.getLogger(__name__)
 

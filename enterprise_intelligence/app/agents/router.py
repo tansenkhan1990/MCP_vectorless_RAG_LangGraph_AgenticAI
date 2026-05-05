@@ -12,7 +12,7 @@ Routing rules (evaluated in order, highest priority first):
 import logging
 import re
 
-from app.state import GraphState
+from app.workflows.state import GraphState
 
 logger = logging.getLogger(__name__)
 

@@ -13,7 +13,7 @@ from mcp.server.fastmcp import FastMCP
 from reportlab.pdfgen import canvas
 from reportlab.lib.pagesizes import letter
 
-from app.config import UPLOADS_DIR
+from app.core import UPLOADS_DIR
 
 logger = logging.getLogger(__name__)
 

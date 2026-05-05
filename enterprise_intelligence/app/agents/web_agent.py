@@ -5,7 +5,7 @@ import re
 
 from ddgs import DDGS
 
-from app.state import GraphState
+from app.workflows.state import GraphState
 
 logger = logging.getLogger(__name__)
 

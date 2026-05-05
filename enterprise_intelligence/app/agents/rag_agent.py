@@ -3,7 +3,7 @@
 import logging
 
 from app.rag.retriever import search_documents
-from app.state import GraphState
+from app.workflows.state import GraphState
 
 logger = logging.getLogger(__name__)
 

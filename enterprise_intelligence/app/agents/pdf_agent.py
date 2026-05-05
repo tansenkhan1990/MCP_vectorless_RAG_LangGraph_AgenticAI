@@ -9,8 +9,8 @@ from queue import Queue
 from mcp.client.stdio import StdioServerParameters, stdio_client
 from mcp import ClientSession
 
-from app.state import GraphState
-from app.config import PDF_GENERATION_TIMEOUT_SECONDS
+from app.workflows.state import GraphState
+from app.core import PDF_GENERATION_TIMEOUT_SECONDS
 
 logger = logging.getLogger(__name__)
 

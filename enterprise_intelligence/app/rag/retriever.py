@@ -2,8 +2,8 @@
 
 import logging
 
-from app.db import get_supabase_client
-from app.config import RAG_MATCH_COUNT
+from app.core.database import get_supabase_client
+from app.core import RAG_MATCH_COUNT
 
 logger = logging.getLogger(__name__)
 
