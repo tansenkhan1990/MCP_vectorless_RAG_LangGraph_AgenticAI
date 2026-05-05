@@ -49,9 +49,9 @@ async def ask(req: AskRequest):
     """
     try:
         logger.info("Processing question: %s", req.question[:100])
-        graph = get_graph()
-        result = graph.invoke({"question": req.question})
         result = await process_question(req.question)
+        return AskResponse(**result)
+    except Exception as exc:
         raise HTTPException(
             status_code=500,
             detail=f"Error processing question: {exc}",
@@ -79,12 +79,6 @@ async def upload_pdf(file: UploadFile = File(...)):
     # --- Validate file type ---
     if not file.filename or not file.filename.lower().endswith(".pdf"):
         raise HTTPException(status_code=400, detail="Only PDF files are allowed")
-
-    # --- Validate content type ---
-    if file.content_type and file.content_type != "application/pdf":
-        raise HTTPExcepname ---
-    if not file.filename:
-        raise HTTPException(status_code=400, detail="Invalid filename")
 
     # --- Validate content type ---
     if file.content_type and file.content_type != "application/pdf":

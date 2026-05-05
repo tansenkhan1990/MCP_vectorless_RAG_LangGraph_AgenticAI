@@ -4,7 +4,7 @@ Core configuration module.
 Centralizes all environment variables and validation logic.
 """
 
-from app.core.config import (
+from app.config import (
     BASE_DIR,
     UPLOADS_DIR,
     OPENAI_BASE_URL,
@@ -17,9 +17,6 @@ from app.core.config import (
     CHUNK_SIZE,
     CHUNK_OVERLAP,
     PDF_GENERATION_TIMEOUT_SECONDS,
-    RATE_LIMIT_REQUESTS,
-    RATE_LIMIT_WINDOW,
-    MAX_QUESTION_LENGTH,
     validate_config,
 )
 
@@ -36,8 +33,5 @@ __all__ = [
     "CHUNK_SIZE",
     "CHUNK_OVERLAP",
     "PDF_GENERATION_TIMEOUT_SECONDS",
-    "RATE_LIMIT_REQUESTS",
-    "RATE_LIMIT_WINDOW",
-    "MAX_QUESTION_LENGTH",
     "validate_config",
 ]
