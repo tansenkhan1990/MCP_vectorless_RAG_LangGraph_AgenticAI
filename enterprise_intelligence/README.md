@@ -10,32 +10,9 @@
 
 ---
 
-
-## Table of Contents
-
-- [What Is This?](#-what-is-this)
-- [System Architecture](#-system-architecture)
-- [How a Question Flows Through the System](#-how-a-question-flows-through-the-system)
-- [Features](#-features)
-- [Quick Start](#-quick-start)
-- [Installation](#-installation)
-- [Configuration](#-configuration)
-- [API Endpoints](#-api-endpoints)
-- [Agents Deep Dive](#-agents-deep-dive)
-- [Tools Reference](#-tools-reference)
-- [Project Structure](#-project-structure)
-- [Database Schema](#-database-schema)
-- [LangGraph Workflow](#-langgraph-workflow)
-- [MCP PDF Server](#-mcp-pdf-server)
-- [Security](#-security)
-- [Troubleshooting](#-troubleshooting)
-- [Example Queries](#-example-queries)
-- [Dependencies](#-dependencies)
-- [Roadmap](#-roadmap)"
-
 A sophisticated agentic AI system built with **LangGraph** that intelligently routes queries to specialized agents for comprehensive enterprise intelligence. The system seamlessly integrates Retrieval-Augmented Generation (RAG), real-time web search, financial data analysis, and document processing capabilities.
 
-![Version](https://img.shields.io/badge/version-1.0.0-blue.svg)
+![Version](https://img.shields.io/badge/version-2.0.0-blue.svg)
 ![Python](https://img.shields.io/badge/python-3.10+-green.svg)
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
 
@@ -56,19 +33,19 @@ A sophisticated agentic AI system built with **LangGraph** that intelligently ro
 ## ✨ Features
 
 ### Intelligent Query Routing
-- **Smart Router**: Automatically routes queries to the most appropriate agent based on content analysis
+- **Smart Router**: Keyword-based classification with LLM fallback for ambiguous queries
 - **Context-Aware**: Understands query intent and delegates to specialized agents
 
 ### Multi-Agent Architecture
-- **RAG Agent**: Retrieves company-specific information from Supabase vector database
+- **Router Agent**: Classifies queries using keyword matching, falls back to LLM for ambiguous cases
+- **RAG Agent**: Retrieves company-specific information from Supabase via PostgreSQL full-text search
 - **Web Agent**: Performs real-time web searches using DuckDuckGo
 - **Stock Agent**: Fetches real-time financial data using yfinance
-- **PDF Agent**: Processes and generates PDF documents using MCP
-- **Router Agent**: Intelligently routes incoming queries to appropriate agents
+- **PDF Agent**: Researches topics using all available tools, then generates PDF reports via MCP
 
 ### Enterprise Capabilities
 - **PDF Upload & Ingestion**: Upload PDF documents for RAG system ingestion with automatic chunking
-- **Vector-less RAG**: Efficiently search documents without vector embeddings
+- **Vector-less RAG**: Efficiently search documents using PostgreSQL full-text search (no vector embeddings needed)
 - **Real-time Data**: Access latest financial information and web content
 - **Document Generation**: Create formatted reports and documents
 
@@ -105,7 +82,7 @@ The system uses a state-machine based architecture powered by **LangGraph**:
 
 1. **FastAPI Server**: RESTful API with async support
 2. **LangGraph**: State management and agent orchestration
-3. **Supabase**: Vector database for RAG storage
+3. **Supabase**: PostgreSQL database with full-text search (tsvector) for RAG storage
 4. **MCP Server**: Model Context Protocol for tool integration
 
 ## 📦 Prerequisites
@@ -131,27 +108,7 @@ The system uses a state-machine based architecture powered by **LangGraph**:
 cd /path/to/enterprise_intelligence
 ```
 
-### Step 2: Initialize UV Project (if not already done)
-
-```bash
-uv init
-```
-
-### Step 3: Install Dependencies
-
-Using **uv** (recommended - much faster than pip):
-
-```bash
-uv add fastapi uvicorn langgraph openai-agents python-dotenv supabase mcp reportlab duckduckgo-search yfinance pymupdf python-multipart httpx
-```
-
-Or using requirements.txt:
-
-```bash
-uv pip install -r requirements.txt
-```
-
-### Step 4: Create Virtual Environment (Recommended)
+### Step 2: Create Virtual Environment (Recommended)
 
 ```bash
 uv venv
@@ -160,11 +117,16 @@ source .venv/bin/activate  # On macOS/Linux
 .venv\Scripts\activate  # On Windows
 ```
 
-### Step 5: Install all dependencies
+### Step 3: Install Dependencies
 
 ```bash
 uv pip install -r requirements.txt
 ```
+
+> **Tip:** If you prefer using `uv add` instead, you can install each package individually:
+> ```bash
+> uv add fastapi uvicorn langgraph openai-agents python-dotenv supabase mcp reportlab duckduckgo-search yfinance pymupdf python-multipart httpx
+> ```
 
 ## ⚙️ Configuration
 
@@ -189,7 +151,6 @@ OPENAI_DISABLE_TELEMETRY=true
 
 # Local Model Configuration
 LOCAL_MODEL_NAME=qwen3-vl:235b-cloud
-LOCAL_EMBEDDING_MODEL=nomic-embed-text:latest
 
 # Supabase Configuration
 SUPABASE_URL=https://your-project.supabase.co
@@ -209,7 +170,6 @@ PDF_GENERATION_TIMEOUT_SECONDS=30  # PDF generation timeout
 | `OPENAI_BASE_URL` | Ollama server endpoint | `http://localhost:11434/v1` |
 | `OPENAI_API_KEY` | API key for Ollama | `ollama` |
 | `LOCAL_MODEL_NAME` | LLM model to use | `qwen3-vl:235b-cloud` |
-| `LOCAL_EMBEDDING_MODEL` | Embedding model | `nomic-embed-text:latest` |
 | `SUPABASE_URL` | Supabase project URL | `https://project.supabase.co` |
 | `SUPABASE_KEY` | Supabase anon key | Your project anon key |
 | `MAX_UPLOAD_SIZE_MB` | Max file upload size | `50` |
@@ -243,7 +203,7 @@ PDF_GENERATION_TIMEOUT_SECONDS=30  # PDF generation timeout
 
 5. **Rate limiting**
    - `/ask` and `/upload-pdf` endpoints: 10 requests per 60 seconds per IP
-   - Adjust `RATE_LIMIT_REQUESTS` and `RATE_LIMIT_WINDOW` in `app/main.py` for production
+   - Adjust `RATE_LIMIT_REQUESTS` and `RATE_LIMIT_WINDOW` in `app/core/config.py` for production
 
 ### Environment Setup for Different Environments
 
@@ -311,6 +271,10 @@ Process a question through the agentic AI system.
 curl -X POST "http://localhost:8000/ask" \
   -H "Content-Type: application/json" \
   -d '{"question": "What are the latest AI trends?"}'
+*** For RAG internal database response
+  {
+  "question": "What information do we have about Tansen Khan?"
+}
 ```
 
 ### 2. Upload PDF Endpoint
@@ -351,93 +315,129 @@ Check if the API is running.
 ## 📁 Project Structure
 
 ```
+
 enterprise_intelligence/
 ├── app/
-│   ├── main.py                 # FastAPI application entry point
-│   ├── config.py               # Configuration management
-│   ├── db.py                   # Shared Supabase client factory
-│   ├── state.py                # LangGraph state definitions
-│   ├── graph.py                # LangGraph orchestration
+│   ├── main.py                    # FastAPI entry point (40 lines)
 │   │
-│   ├── agents/                 # Specialized agents
-│   │   ├── router.py           # Intelligent query router
-│   │   ├── rag_agent.py        # RAG search agent
-│   │   ├── web_agent.py        # Web search agent (DuckDuckGo)
-│   │   ├── stock_agent.py      # Financial data agent
-│   │   └── pdf_agent.py        # PDF processing agent
+│   ├── core/                      # Configuration & infrastructure
+│   │   ├── config.py              # Environment variables & validation
+│   │   ├── database.py            # Supabase client factory (lazy)
+│   │   └── lifecycle.py           # FastAPI startup/shutdown hooks
 │   │
-│   ├── rag/                    # RAG components
-│   │   ├── retriever.py        # Document retrieval from Supabase
-│   │   └── uploader.py         # PDF ingestion and chunking
+│   ├── api/                       # REST API layer
+│   │   ├── routes.py              # HTTP endpoints (GET /, POST /ask, POST /upload-pdf)
+│   │   └── schemas.py             # Pydantic request/response models
 │   │
-│   └── mcp_server/
-│       └── server.py           # Model Context Protocol server
+│   ├── workflows/                 # LangGraph orchestration
+│   │   ├── state.py               # GraphState schema
+│   │   └── graph.py               # Workflow builder & compiler
+│   │
+│   ├── agents/                    # AI agents (OpenAI Agent SDK)
+│   │   ├── router.py              # Query classifier (keywords → LLM fallback)
+│   │   ├── rag_agent.py           # RAG search agent
+│   │   ├── web_agent.py           # Web search agent (DuckDuckGo)
+│   │   ├── stock_agent.py         # Financial data agent (yfinance)
+│   │   ├── pdf_agent.py           # PDF report generation agent
+│   │   └── tools.py               # @function_tool definitions for all agents
+│   │
+│   ├── services/                  # Business logic
+│   │   ├── query_service.py       # Question processing orchestration
+│   │   └── pdf_service.py         # PDF upload & validation
+│   │
+│   ├── rag/                       # RAG data access
+│   │   ├── retriever.py           # Supabase full-text search (tsvector)
+│   │   └── uploader.py            # PDF text extraction & chunking
+│   │
+│   ├── mcp_server/                # Model Context Protocol server
+│   │   └── server.py              # PDF generation tool (ReportLab via FastMCP)
+│   │
+│   ├── middleware/                # Request/response processing
+│   │   ├── rate_limiter.py        # IP-based rate limiting
+│   │   └── __init__.py            # Middleware registration
+│   │
+│   └── utils/                     # Reusable utilities
+│       └── __init__.py            # PDF validation helpers
 │
 ├── schema/
-│   └── private_company_details.sql  # Database schema
+│   └── private_company_details.sql    # Database schema
 │
-├── uploads/                    # Directory for uploaded PDFs
-├── requirements.txt            # Python dependencies
-├── pyproject.toml              # UV project configuration
-├── .env                        # Environment variables (gitignored)
-├── .gitignore                  # Git ignore rules
-└── README.md                   # This file
+├── uploads/                       # Uploaded PDFs (gitignored)
+│   └── reports/                   # Generated PDF reports
+│
+├── requirements.txt               # Python dependencies
+├── pyproject.toml                 # UV project configuration
+├── .env.example                   # Environment template (gitignored)
+├── .gitignore                     # Git ignore rules
+└── README.md                      # This file
 ```
 
 ## 🤖 Agents Overview
 
 ### Router Agent
-**Purpose**: Intelligent query routing
+**Purpose**: Query classifier — fast keyword matching with LLM fallback
 
-**Decision Logic**:
-- **PDF/Report** → Routes to PDF Agent
-- **Stock/Tesla/Apple** → Routes to Stock Agent
-- **News/Politics/Latest** → Routes to Web Agent
-- **Default** → Routes to RAG Agent
+**Decision Logic** (evaluated in priority order):
+1. **Explicit web-search intent** (e.g. "search the web") → **web**
+2. **PDF/Report keywords** (pdf, report, document, generate) → **pdf**
+3. **News/forecast keywords** (news, latest, trending, forecast, outlook) → **web**
+4. **Stock/ticker keywords** (stock, ticker, share price, company name) → **stock**
+5. **Ambiguous queries** → LLM classification fallback → **one of rag/web/stock/pdf**
+6. **Default** → **rag**
 
 **Implementation**: [router.py](app/agents/router.py)
 
 ### RAG Agent
-**Purpose**: Retrieve company-specific information from database
+**Purpose**: Retrieve company-specific information from Supabase via PostgreSQL full-text search
 
 **Features**:
-- Full-text search on Supabase
-- Returns top 5 matching documents
-- Supports custom chunking strategies
+- Full-text search on Supabase `tsvector` column
+- Returns top 5 matching document chunks
+- Chunks are 1200 characters with 200-char overlap
+- Includes fallback direct retrieval if LLM fails
 
 **Implementation**: [rag_agent.py](app/agents/rag_agent.py)
 
 ### Web Agent
-**Purpose**: Real-time web information retrieval
+**Purpose**: Real-time web information retrieval via DuckDuckGo
 
 **Features**:
 - Uses DuckDuckGo search engine
-- Returns 5 most relevant results
-- Formats results with title and body
+- Returns 5 most relevant results with title, body, and URL
+- Includes fallback direct search if LLM fails
 
 **Implementation**: [web_agent.py](app/agents/web_agent.py)
 
 ### Stock Agent
-**Purpose**: Financial market data analysis
+**Purpose**: Financial market data analysis via yfinance
 
 **Features**:
-- Real-time stock data via yfinance
-- Current price, PE ratio, market cap
-- Supports multiple tickers (extensible)
+- Real-time stock data: current price, PE ratio, market cap, 52-week range
+- Supports 15+ tickers with automatic company → ticker mapping
+- Fallback ticker extraction via regex if LLM fails
 
 **Supported Tickers**:
-- `AAPL` (Apple) - Default
-- `TSLA` (Tesla) - If "tesla" in query
+- `AAPL` (Apple), `TSLA` (Tesla), `GOOGL` (Google/Alphabet), `MSFT` (Microsoft)
+- `AMZN` (Amazon), `META` (Meta/Facebook), `NVDA` (NVIDIA), `NFLX` (Netflix)
+- `ASML`, `TSM` (TSMC), `INTC` (Intel), `AMD` (AMD), `QCOM` (Qualcomm)
+- `AVGO` (Broadcom), `CRM` (Salesforce), `ORCL` (Oracle), `JPM` (JPMorgan), `GS` (Goldman Sachs)
 
 **Implementation**: [stock_agent.py](app/agents/stock_agent.py)
 
 ### PDF Agent
-**Purpose**: Document generation and processing
+**Purpose**: Research and report generation — the most capable agent
 
 **Features**:
-- Uses Model Context Protocol (MCP)
-- Generates formatted reports
-- Async processing
+- Uses ALL available tools: web search, stock data, and company document search
+- Researches thoroughly before generating the report
+- Generates PDF via MCP server (reportlab)
+- Includes fallback that does a web search + direct PDF generation
+
+**Workflow**:
+1. Analyze the user's request
+2. Research with appropriate tools
+3. Synthesize findings with executive summary, key findings, sources
+4. Generate PDF with `generate_pdf_report` tool
 
 **Implementation**: [pdf_agent.py](app/agents/pdf_agent.py)
 
@@ -543,21 +543,21 @@ uvicorn app.main:app --port 8001 --reload
 
 ## 📚 Dependencies
 
-| Package | Version | Purpose |
-|---------|---------|---------|
-| `fastapi` | Latest | Web framework |
-| `uvicorn` | Latest | ASGI server |
-| `langgraph` | Latest | Agent orchestration |
-| `openai-agents` | Latest | LLM integration |
-| `python-dotenv` | Latest | Environment variables |
-| `supabase` | Latest | Database client |
-| `mcp` | Latest | Model Context Protocol |
-| `reportlab` | Latest | PDF generation |
-| `duckduckgo-search` | Latest | Web search |
-| `yfinance` | Latest | Stock data |
-| `pymupdf` | Latest | PDF processing |
-| `python-multipart` | Latest | Form data handling |
-| `httpx` | Latest | HTTP client |
+| Package | Version (minimum) | Purpose |
+|---------|------------------|---------|
+| `fastapi` | >=0.136.1 | Web framework |
+| `uvicorn` | >=0.46.0 | ASGI server |
+| `langgraph` | >=1.1.10 | Agent orchestration |
+| `openai-agents` | >=0.15.1 | LLM integration & tool-calling |
+| `python-dotenv` | >=1.2.2 | Environment variables |
+| `supabase` | >=2.29.0 | Database client |
+| `mcp` | >=1.27.0 | Model Context Protocol |
+| `reportlab` | >=4.5.0 | PDF generation |
+| `duckduckgo-search` | >=8.1.1 | Web search |
+| `yfinance` | >=1.3.0 | Stock data |
+| `pymupdf` | >=1.27.2.3 | PDF extraction |
+| `python-multipart` | >=0.0.27 | Form data handling |
+| `httpx` | >=0.28.1 | HTTP client |
 
 ## 🔐 Security Best Practices
 
@@ -602,9 +602,6 @@ Contributions are welcome! Please follow these guidelines:
 4. Commit with clear messages
 5. Push and create a Pull Request
 
-## 📄 License
-
-This project is licensed under the MIT License - see LICENSE file for details.
 
 ## 📞 Support
 
