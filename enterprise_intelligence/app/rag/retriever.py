@@ -1,4 +1,12 @@
-"""RAG retriever — searches the Supabase document store using full-text search."""
+"""
+RAG retriever — **vector-less** retrieval over the Supabase document store.
+
+Learning angles:
+    - **Full-text search** (Postgres ``tsvector`` / GIN index) instead of embedding
+      similarity — simpler ops, different failure modes than vector RAG.
+    - ``client.rpc(...)`` calls a database function (e.g. ``search_private_company_details``)
+      encapsulating ranking (e.g. ``ts_rank``) — retrieval logic stays in SQL.
+"""
 
 import logging
 

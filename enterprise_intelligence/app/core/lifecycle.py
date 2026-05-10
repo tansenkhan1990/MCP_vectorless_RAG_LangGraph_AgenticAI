@@ -1,8 +1,11 @@
 """
 Application lifecycle management (startup and shutdown).
 
-Handles initialization and cleanup of resources like logging,
-directories, and configuration validation.
+Learning angles (FastAPI lifespan):
+    - ``@asynccontextmanager`` yields between startup and shutdown — ideal for
+      **validate config once**, create dirs, and log readiness.
+    - Raising on bad config fails fast before accepting traffic (stricter than
+      lazy failures deep in a request).
 """
 
 import logging

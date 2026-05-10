@@ -1,34 +1,64 @@
 """
 Pydantic request and response models for API endpoints.
 
-Centralized validation and serialization for API contracts.
+Learning angles (Pydantic v2):
+    - Models are the **contract** at the HTTP boundary; FastAPI uses them for
+      parsing, validation, and OpenAPI generation.
+    - ``field_validator`` enforces rules that depend on cleaned values (strip,
+      then length) — stricter than trusting raw JSON alone.
+    - ``ConfigDict(json_schema_extra=...)`` enriches **Swagger / ReDoc** examples
+      for anyone exploring ``/docs``.
 """
 
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+
 from app.core import MAX_QUESTION_LENGTH
 
 
 class AskRequest(BaseModel):
     """Request body for the /ask endpoint."""
-    question: str
+
+    model_config = ConfigDict(
+        json_schema_extra={"examples": [{"question": "What is the current price of Apple stock?"}]},
+    )
+
+    question: str = Field(
+        ...,
+        description="User question routed to the multi-agent workflow.",
+    )
 
     @field_validator("question")
     @classmethod
-    def question_must_not_be_empty(cls, v: str) -> str:
-        if not v.strip():
+    def strip_and_limit_length(cls, v: str) -> str:
+        s = v.strip()
+        if not s:
             raise ValueError("Question cannot be empty")
-        if len(v) > MAX_QUESTION_LENGTH:
+        if len(s) > MAX_QUESTION_LENGTH:
             raise ValueError(f"Question cannot exceed {MAX_QUESTION_LENGTH} characters")
-        return v.strip()
+        return s
 
 
 class AskResponse(BaseModel):
     """Response body for the /ask endpoint."""
-    question: str
-    route: str | None = None
-    answer: str | None = None
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "examples": [
+                {
+                    "question": "What is the current price of Apple stock?",
+                    "route": "stock",
+                    "answer": "Ticker: AAPL\n...",
+                }
+            ]
+        },
+    )
+
+    question: str = Field(..., description="Echo of the request question.")
+    route: str | None = Field(None, description="Agent route: rag, web, stock, or pdf.")
+    answer: str | None = Field(None, description="Natural-language answer from the agent.")
 
 
 class MessageResponse(BaseModel):
     """Generic message response for simple operations."""
-    message: str
+
+    message: str = Field(..., min_length=1)

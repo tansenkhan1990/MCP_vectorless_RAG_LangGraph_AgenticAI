@@ -1,5 +1,12 @@
 """
-RAG uploader — extracts text from PDFs and ingests chunks into Supabase.
+RAG uploader — **ingestion** pipeline: PDF → text → chunks → database.
+
+Learning angles:
+    - **Chunking** (size + overlap) balances context size vs retrieval granularity.
+    - **Batch insert** reduces round-trips vs one row per chunk — important for
+      large PDFs and PostgREST limits.
+    - Rows store provenance (file name, page) so answers can be traced back to
+      source pages when you extend the API.
 """
 
 import logging
@@ -11,6 +18,9 @@ from app.core.database import get_supabase_client
 from app.core import CHUNK_SIZE, CHUNK_OVERLAP
 
 logger = logging.getLogger(__name__)
+
+# Fewer round-trips to Supabase on large PDFs (Supabase/PostgREST batch insert).
+_INGEST_BATCH_SIZE = 100
 
 
 def chunk_text(text: str, size: int | None = None, overlap: int | None = None) -> list[str]:
@@ -66,6 +76,7 @@ def ingest_pdf(file_path: str, filename: str) -> str:
     client = get_supabase_client()
     doc = fitz.open(file_path)
     total_chunks = 0
+    batch: list[dict] = []
 
     try:
         for page_num, page in enumerate(doc, start=1):
@@ -77,15 +88,21 @@ def ingest_pdf(file_path: str, filename: str) -> str:
             chunks = chunk_text(text)
 
             for chunk in chunks:
-                client.table("private_company_details").insert({
+                batch.append({
                     "file_name": filename,
                     "title": filename,
                     "page_number": page_num,
                     "chunk_text": chunk,
                     "category": "private",
                     "source": "uploaded_pdf",
-                }).execute()
+                })
                 total_chunks += 1
+                if len(batch) >= _INGEST_BATCH_SIZE:
+                    client.table("private_company_details").insert(batch).execute()
+                    batch.clear()
+
+        if batch:
+            client.table("private_company_details").insert(batch).execute()
 
         logger.info(
             "Ingested %d chunks from %d pages of '%s'",

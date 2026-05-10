@@ -1,10 +1,12 @@
 """
-Query service — orchestrates question routing and processing.
+Query service — bridges **HTTP** (already validated by Pydantic) to **LangGraph**.
 
-Handles:
-  - Async LangGraph workflow execution (all agent nodes use OpenAI Agent SDK)
-  - Query validation
-  - Error handling and logging
+Learning angles:
+    - ``graph.ainvoke(...)``: async execution for async nodes (router + Agent SDK).
+    - **Initial state** includes every ``GraphState`` key so reducer channels
+      (e.g. ``messages``) start defined.
+    - Return value is a **stable API dict** (question, route, answer), not the raw
+      full graph state — keeps the REST contract explicit for learners and clients.
 """
 
 import logging
@@ -40,9 +42,22 @@ async def process_question(question: str) -> dict:
     try:
         logger.info("Processing question: %s", question[:100])
         graph = get_graph()
-        result = await graph.ainvoke({"question": question})
+        # Full initial state so channels with reducers (e.g. ``add_messages``) start defined.
+        result = await graph.ainvoke(
+            {
+                "question": question,
+                "route": None,
+                "answer": None,
+                "messages": [],
+                "intermediate_steps": None,
+            }
+        )
         logger.info("Question processed — route=%s", result.get("route"))
-        return result
+        return {
+            "question": question,
+            "route": result.get("route"),
+            "answer": result.get("answer"),
+        }
     except Exception as exc:
         logger.error("Error processing question: %s", exc, exc_info=True)
         raise

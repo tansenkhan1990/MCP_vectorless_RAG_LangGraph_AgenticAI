@@ -1,15 +1,16 @@
 """
 Enterprise Intelligence API — FastAPI application entry point.
 
-The application is cleanly separated into modules:
-  - app.core: Configuration, database, lifecycle
-  - app.middleware: Request/response processing
-  - app.api: Routes and schemas
-  - app.services: Business logic
-  - app.agents: Specialized agents
-  - app.rag: RAG system
+Learning angles (FastAPI):
+    - ``FastAPI()`` factory + ``lifespan`` for startup validation and dirs (see
+      ``app.core.lifecycle``).
+    - ``include_router`` composes HTTP routes; OpenAPI is generated from Pydantic
+      models in ``app.api.schemas``.
+    - Middleware (rate limit) is registered centrally — cross-cutting concerns
+      stay out of route handlers.
 
-This main module only assembles and configures the app.
+This module only assembles the app; business logic lives under ``app/services``
+and ``app/workflows``.
 """
 
 import logging

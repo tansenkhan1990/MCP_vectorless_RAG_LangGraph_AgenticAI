@@ -18,6 +18,7 @@ A sophisticated agentic AI system built with **LangGraph** that intelligently ro
 
 ## 📋 Table of Contents
 
+- [Learning guide](#-learning-guide)
 - [Features](#-features)
 - [Architecture](#-architecture)
 - [Prerequisites](#-prerequisites)
@@ -29,6 +30,10 @@ A sophisticated agentic AI system built with **LangGraph** that intelligently ro
 - [Agents Overview](#-agents-overview)
 - [Database Schema](#-database-schema)
 - [Troubleshooting](#-troubleshooting)
+
+## 📚 Learning guide
+
+For a **concept syllabus** (FastAPI, Pydantic, LangGraph, OpenAI Agents SDK, vector-less RAG, MCP), a **request trace** through the codebase, and **hands-on experiments**, see **[LEARNING_GUIDE.md](LEARNING_GUIDE.md)**. It complements the architecture docs by tying each technology to specific files.
 
 ## ✨ Features
 
@@ -437,7 +442,7 @@ enterprise_intelligence/
 1. Analyze the user's request
 2. Research with appropriate tools
 3. Synthesize findings with executive summary, key findings, sources
-4. Generate PDF with `generate_pdf_report` tool
+4. Generate PDF with the MCP tool `generate_pdf` (via the PDF agent's `mcp_servers` attachment)
 
 **Implementation**: [pdf_agent.py](app/agents/pdf_agent.py)
 

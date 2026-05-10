@@ -1,11 +1,22 @@
-"""RAG agent node — LLM-powered with tool access to the company knowledge base."""
+"""
+RAG agent node — **LangGraph node** wrapping an OpenAI Agents SDK agent.
+
+Learning angles:
+    - One **Agent** with one primary tool (document search) — minimal tool surface
+      reduces routing errors inside the node.
+    - ``Runner.run`` executes the model/tool loop; ``final_output_as_text`` normalizes
+      output for the API.
+    - Fallback calls ``search_company_documents_impl`` directly if the runner fails
+      — **degradation path** without a second LLM call.
+"""
 
 import logging
 from agents import Agent, Runner
 
 from app.workflows.state import GraphState
-from app.agents.tools import search_company_documents
-from app.config import MODEL_NAME
+from app.agents.runner_utils import final_output_as_text
+from app.agents.tools import search_company_documents, search_company_documents_impl
+from app.core.config import MODEL_NAME
 
 logger = logging.getLogger(__name__)
 
@@ -44,14 +55,14 @@ async def rag_node(state: GraphState) -> dict:
 
     try:
         result = await Runner.run(_rag_agent, question)
-        answer = result.final_output if result else "No response generated."
+        answer = final_output_as_text(result)
         logger.info("RAG Agent completed — answer length: %d chars", len(answer))
         return {"answer": answer}
     except Exception as exc:
         logger.error("RAG Agent failed: %s", exc, exc_info=True)
         # Fallback to direct retrieval if LLM fails
         try:
-            fallback = search_company_documents(question)
+            fallback = search_company_documents_impl(question)
             return {"answer": f"[Fallback — direct search results]\n\n{fallback}"}
         except Exception:
             return {"answer": f"RAG search error: {exc}"}

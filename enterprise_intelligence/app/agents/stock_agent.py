@@ -1,12 +1,18 @@
-"""Stock agent node — LLM-powered with real-time financial data access."""
+"""
+Stock agent node — specialist with **yfinance** via ``get_stock_data``.
+
+Demonstrates **tool + domain mapping** (company names → tickers in instructions)
+and regex fallback when the LLM path fails.
+"""
 
 import logging
 import re
 
 from agents import Agent, Runner
 from app.workflows.state import GraphState
-from app.agents.tools import get_stock_data
-from app.config import MODEL_NAME
+from app.agents.runner_utils import final_output_as_text
+from app.agents.tools import get_stock_data, get_stock_data_impl
+from app.core.config import MODEL_NAME
 
 logger = logging.getLogger(__name__)
 
@@ -65,7 +71,7 @@ async def stock_node(state: GraphState) -> dict:
 
     try:
         result = await Runner.run(_stock_agent, question)
-        answer = result.final_output if result else "No response generated."
+        answer = final_output_as_text(result)
         logger.info("Stock Agent completed — answer length: %d chars", len(answer))
         return {"answer": answer}
     except Exception as exc:
@@ -75,7 +81,7 @@ async def stock_node(state: GraphState) -> dict:
             # Try to extract a ticker-like pattern
             ticker_match = re.search(r'\b([A-Z]{1,5})\b', question.upper())
             ticker = ticker_match.group(1) if ticker_match else "AAPL"
-            fallback = get_stock_data(ticker)
+            fallback = get_stock_data_impl(ticker)
             return {"answer": f"[Fallback — direct stock data]\n\n{fallback}"}
         except Exception:
             return {"answer": f"Stock lookup error: {exc}"}

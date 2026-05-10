@@ -1,5 +1,13 @@
-"""Router node — classifies the user query via fast keyword matching with an LLM fallback
-for ambiguous queries.
+"""
+Router node — **classification** without heavy LLM use on the hot path.
+
+LangGraph uses the returned ``route`` in ``add_conditional_edges``.
+
+Learning angles:
+    - **Tiered routing**: cheap string rules first, **LLM only when ambiguous** —
+      latency and cost control.
+    - Router is still a **graph node**: it only sets ``state["route"]``; it does
+      not call specialist tools itself.
 
 Routing rules (evaluated in order, highest priority first):
     1. Explicit web-search intent phrases  →  web  (e.g. "search the web")
@@ -14,7 +22,9 @@ efficient for the common case while handling truly ambiguous queries well.
 """
 
 import logging
+import re
 
+from app.agents.runner_utils import final_output_as_text
 from app.workflows.state import GraphState
 
 logger = logging.getLogger(__name__)
@@ -71,7 +81,7 @@ async def _llm_classify(question: str) -> str:
     Returns one of: "rag", "web", "stock", "pdf".
     """
     from agents import Agent, Runner
-    from app.config import MODEL_NAME
+    from app.core.config import MODEL_NAME
 
     classify_agent = Agent(
         name="Query Router",
@@ -90,10 +100,9 @@ async def _llm_classify(question: str) -> str:
 
     try:
         result = await Runner.run(classify_agent, question)
-        route = result.final_output.strip().lower() if result else "rag"
-        if route not in {"rag", "web", "stock", "pdf"}:
-            route = "rag"
-        return route
+        text = final_output_as_text(result).lower()
+        m = re.search(r"\b(rag|web|stock|pdf)\b", text)
+        return m.group(1) if m else "rag"
     except Exception as exc:
         logger.debug("LLM router fallback failed, defaulting to rag: %s", exc)
         return "rag"
@@ -135,9 +144,9 @@ async def router_node(state: GraphState) -> dict:
     elif _matches_any(q, _STOCK_KEYWORDS) or _matches_any(q, _STOCK_TICKERS):
         route = "stock"
 
-    # 5. Ambiguous — use the LLM for intelligent routing
+    # 5. Ambiguous — use the LLM for intelligent routing (preserve original casing)
     else:
-        route = await _llm_classify(q)
+        route = await _llm_classify(state["question"])
 
     logger.info("Router decision: '%s' → %s", state["question"][:100], route)
     return {"route": route}

@@ -7,6 +7,10 @@ Complete guide to navigating the Enterprise Intelligence system documentation.
 
 ## 🚀 START HERE
 
+0. **LEARNING_GUIDE.md** ← **Syllabus for learners** (tech stack → concepts → file map → exercises)
+   - Maps FastAPI, Pydantic, LangGraph, OpenAI Agents SDK, RAG, MCP to concrete modules
+   - Best for: students, interview prep, teaching the codebase
+
 1. **QUICK_START.md** ← Read this first! (5 min read)
    - What was done
    - How to verify everything works
@@ -187,6 +191,7 @@ Complete guide to navigating the Enterprise Intelligence system documentation.
 All documentation files are in the project root:
 ```
 enterprise_intelligence/
+├── LEARNING_GUIDE.md                 ← Concepts + file map (learners)
 ├── QUICK_START.md                    ← Start here!
 ├── TRANSFORMATION_SUMMARY.md
 ├── ARCHITECTURE.md

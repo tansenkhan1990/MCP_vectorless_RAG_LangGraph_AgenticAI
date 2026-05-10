@@ -1,13 +1,18 @@
 """
-LangGraph workflow definition.
+LangGraph workflow definition — **orchestration** layer for multi-agent routing.
 
-Builds and compiles the state graph that routes user queries
-to the appropriate specialist agent. Each agent node is powered
-by the OpenAI Agent SDK with domain-specific tools.
+Learning angles (LangGraph):
+    - ``StateGraph(GraphState)``: graph typed by shared state (see ``state.py``).
+    - ``add_node`` / ``set_entry_point``: each node is an async function receiving
+      state and returning a **partial update** (e.g. ``{"route": ...}`` or
+      ``{"answer": ...}``).
+    - ``add_conditional_edges``: branch on ``state["route"]`` — classic **router
+      pattern** without embedding LLM logic in the graph builder.
+    - ``compile()`` then ``ainvoke()`` (see ``query_service``): LangGraph merges
+      updates into state between steps.
 
-The LangGraph remains the orchestrator — managing state flow,
-routing, and conditional edges — while the OpenAI Agent SDK
-handles LLM reasoning and tool calling within each node.
+The OpenAI **Agents SDK** runs *inside* rag/web/stock/pdf nodes; LangGraph only
+decides **which** node runs after the router.
 """
 
 import logging

@@ -1,7 +1,10 @@
 """
 API endpoint handlers for the Enterprise Intelligence system.
 
-Implements health checks, query processing, and PDF uploads.
+Learning angles:
+    - Handlers stay thin: validate via Pydantic (``AskRequest``), delegate to
+      ``services``, map errors to HTTP status codes.
+    - ``response_model=`` ties responses to schemas for consistent OpenAPI output.
 """
 
 import logging
