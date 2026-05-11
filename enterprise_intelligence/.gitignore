@@ -133,3 +133,7 @@ uploads/
 
 # Local configuration files
 config.local.py
+
+# Graphify outputs and Cursor project metadata
+graphify-out/
+.cursor/
