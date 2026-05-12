@@ -1,64 +1,48 @@
 """
-Pydantic request and response models for API endpoints.
+Pydantic models for HTTP JSON bodies.
 
-Learning angles (Pydantic v2):
-    - Models are the **contract** at the HTTP boundary; FastAPI uses them for
-      parsing, validation, and OpenAPI generation.
-    - ``field_validator`` enforces rules that depend on cleaned values (strip,
-      then length) — stricter than trusting raw JSON alone.
-    - ``ConfigDict(json_schema_extra=...)`` enriches **Swagger / ReDoc** examples
-      for anyone exploring ``/docs``.
+These drive **validation** at the boundary and **OpenAPI** docs (types, constraints,
+``description``, and ``examples`` on fields).
 """
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.core import MAX_QUESTION_LENGTH
 
 
 class AskRequest(BaseModel):
-    """Request body for the /ask endpoint."""
+    """Request body for ``POST /ask``."""
 
-    model_config = ConfigDict(
-        json_schema_extra={"examples": [{"question": "What is the current price of Apple stock?"}]},
-    )
+    model_config = ConfigDict(str_strip_whitespace=True)
 
     question: str = Field(
         ...,
-        description="User question routed to the multi-agent workflow.",
+        min_length=1,
+        max_length=MAX_QUESTION_LENGTH,
+        description="User question; routed to RAG, web, stock, or PDF agents.",
+        examples=["What is the current price of Apple stock?"],
     )
-
-    @field_validator("question")
-    @classmethod
-    def strip_and_limit_length(cls, v: str) -> str:
-        s = v.strip()
-        if not s:
-            raise ValueError("Question cannot be empty")
-        if len(s) > MAX_QUESTION_LENGTH:
-            raise ValueError(f"Question cannot exceed {MAX_QUESTION_LENGTH} characters")
-        return s
 
 
 class AskResponse(BaseModel):
-    """Response body for the /ask endpoint."""
+    """Successful response for ``POST /ask``."""
 
-    model_config = ConfigDict(
-        json_schema_extra={
-            "examples": [
-                {
-                    "question": "What is the current price of Apple stock?",
-                    "route": "stock",
-                    "answer": "Ticker: AAPL\n...",
-                }
-            ]
-        },
+    question: str = Field(..., description="Echo of the submitted question.")
+    route: str | None = Field(
+        None,
+        description="Which agent handled the query: rag, web, stock, or pdf.",
     )
-
-    question: str = Field(..., description="Echo of the request question.")
-    route: str | None = Field(None, description="Agent route: rag, web, stock, or pdf.")
-    answer: str | None = Field(None, description="Natural-language answer from the agent.")
+    answer: str | None = Field(
+        None,
+        description="Natural-language answer from the selected agent.",
+    )
 
 
 class MessageResponse(BaseModel):
-    """Generic message response for simple operations."""
+    """Generic JSON envelope for simple status or success text."""
 
-    message: str = Field(..., min_length=1)
+    message: str = Field(
+        ...,
+        min_length=1,
+        description="Human-readable message (e.g. health check or upload result).",
+    )
