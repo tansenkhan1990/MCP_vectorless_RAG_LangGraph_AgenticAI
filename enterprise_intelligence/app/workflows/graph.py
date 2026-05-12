@@ -36,6 +36,10 @@ _ROUTE_MAP = {
 }
 
 
+def _route_after_router(state: GraphState) -> str:
+    return state["route"]
+
+
 def build_graph() -> StateGraph:
     """
     Construct and compile the LangGraph workflow.
@@ -61,7 +65,7 @@ def build_graph() -> StateGraph:
     # Conditional routing based on the route key set by router_node
     builder.add_conditional_edges(
         "router",
-        lambda state: state["route"],
+        _route_after_router,
         _ROUTE_MAP,
     )
 
